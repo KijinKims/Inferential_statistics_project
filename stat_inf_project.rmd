@@ -1,0 +1,364 @@
+---
+title: "Statistical inference with the GSS data"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+options(warn=-1)
+library(ggplot2)
+library(dplyr)
+library(statsr)
+```
+
+```{r load-data}
+load("gss.Rdata")
+```
+```{r}
+shadenorm = function(below=NULL, above=NULL, pcts = c(0.025,0.975), mu=0, sig=1, numpts = 500, color = "gray", dens = 40,
+
+                    justabove= FALSE, justbelow = FALSE, lines=FALSE,between=NULL,outside=NULL){
+
+                     
+
+    if(is.null(between)){
+
+         below = ifelse(is.null(below), qnorm(pcts[1],mu,sig), below)
+
+         above = ifelse(is.null(above), qnorm(pcts[2],mu,sig), above)
+
+    }
+
+   
+
+    if(is.null(outside)==FALSE){
+
+         below = min(outside)
+
+         above = max(outside)
+
+    }
+
+    lowlim = mu - 4*sig
+
+    uplim  = mu + 4*sig
+
+           
+
+    x.grid = seq(lowlim,uplim, length= numpts)
+
+    dens.all = dnorm(x.grid,mean=mu, sd = sig)
+
+    if(lines==FALSE){
+
+          plot(x.grid, dens.all, type="l", xlab="X", ylab="Density")
+
+    }
+
+    if(lines==TRUE){
+
+          lines(x.grid,dens.all)
+
+    }
+
+   
+
+    if(justabove==FALSE){
+
+        x.below    = x.grid[x.grid<below]
+
+        dens.below = dens.all[x.grid<below]
+
+        polygon(c(x.below,rev(x.below)),c(rep(0,length(x.below)),rev(dens.below)),col=color,density=dens)
+
+    }
+
+    if(justbelow==FALSE){
+
+        x.above    = x.grid[x.grid>above]
+
+        dens.above = dens.all[x.grid>above]
+
+        polygon(c(x.above,rev(x.above)),c(rep(0,length(x.above)),rev(dens.above)),col=color,density=dens)
+
+    }
+
+   
+
+    if(is.null(between)==FALSE){
+
+         from = min(between)
+
+         to   = max(between)
+
+         
+
+         x.between    = x.grid[x.grid>from&x.grid<to]
+
+         dens.between = dens.all[x.grid>from&x.grid<to]
+
+         polygon(c(x.between,rev(x.between)),c(rep(0,length(x.between)),rev(dens.between)),col=color,density=dens)
+
+    }
+
+   
+
+}
+```
+
+
+
+* * *
+
+## Part 1: Data
+According to the description of the methodology which was used for GSS written in [Wikipedia](https://en.wikipedia.org/wiki/General_Social_Survey#Methodology), the GSS __randomly selects__ respondents across the United States using area probability design. It indicates that the conclusions derived from this dataset can be generalized to the population of the United States. This dataset, however, is an __observational__ study with confounding variables, so its data cannot be use to make causal conclusions.
+
+* * *
+
+## Part 2: Research question
+My interest is identifying how different opinions for __government responsibilites__ ,specifically for social welfare, are depending on __economical class__. I chose this question because many times I have watched situations that political parties who claim that government should aid the poor are defeated by the parties who don't -not only in the United States- because of __a lack of support of the poor__ ironically. I want to clarify that the poor support the policies that improve standard of their living as expected.
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+Prior to analysis on my interest, We have to make data clean and classify binned income data value into some categories. We can explore income data by plotting the histogram of income06 column data, which states total family income of each respondent.
+
+```{r}
+ggplot(data = subset(gss, !is.na(income06) & !grepl("Refused", income06)), aes(x=income06)) + geom_histogram(stat = "count") + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + labs(title = "Income", x = "Income", y = "Count")
+```
+
+According to plot above, income distribution is left-skewed. This is because very high income bins are combined into one bin.
+
+Though there is the column addressing subjective class responded by respondents themselves, we need to make objective one. To categorize this data into fewer categories, I used the methodology which was used by [OECD](https://www.oecd.org/statistics/Compare-your-income-methodology.pdf). I classified 50% to 150% of median of income of US people into middle class, below 50% into lower class and above 150% into upper class. Since some upper part of income data is ommited here, we use median household income for the United States in 2012 excerpted from [department of numbers](https://www.deptofnumbers.com/income/us/). Instead of using exact numbers, we utilize median of each bin as representative value because this dataset does not contain numerical value. As you see, this approach has some approximations and assumptions, so it should be interpreted carefully.
+
+```{r}
+intervals <- matrix(c(0, 999, 1000, 2999, 3000, 3999, 4000, 4999, 5000, 5999, 6000, 6999, 7000, 7999, 8000, 9999, 10000, 12499, 12500, 14999, 15000, 17499, 17500, 19999, 20000, 22499, 22500, 24999, 25000, 29999, 30000, 34999, 35000, 39999, 40000, 49999, 50000, 59999, 60000, 74999, 75000, 89999, 90000, 109999, 110000, 129999, 130000, 149999, 150000, 159999), ncol = 2, byrow = TRUE)
+representative_values <- apply(intervals, 1, mean)
+levels(gss$income06) <- c(representative_values, "Refused")
+gss$income06 <- as.numeric(as.character(gss$income06))
+
+median_income <- 54948
+gss[gss$income06 < 1/2*median_income & !is.na(gss$income06),"oecdclass"] <- "lower_class"
+gss[gss$income06 >= 1/2*median_income & gss$income06 <= 3/2*median_income & !is.na(gss$income06),"oecdclass"] <- "middle_class"
+gss[gss$income06 > 3/2*median_income & !is.na(gss$income06),"oecdclass"] <- "upper_class"
+gss$oecdclass <- factor(gss$oecdclass)
+
+table(gss$oecdclass)
+```
+
+Now, We have objectively classified categories of income. We can simply say that this sample has abundant respondents in middle income class. Next, we can summarize and explore the distribution of respondents' opinions on whether goverment should help the poor.
+
+```{r}
+ggplot(data = subset(gss, !is.na(helppoor)), aes(x=helppoor)) + geom_histogram(stat = "count") + labs(title = "Whether government should help the poor", x = "Action", y = "Count")
+```
+
+Majority of respondents agree with both government action and self-reliance.
+Before conducting inference, we can draw contingency table using column "oecdclass" and "helppoor".
+
+```{r}
+table(gss$helppoor, gss$oecdclass)
+```
+
+
+* * *
+
+## Part 4: Inference
+
+To answer our research question, we can conduct statistical inferences. 
+
+The first subject is that __there is obvious difference in proportions of US people only supporting government action between lower class and upper class__. To claim so, we will use inference on difference of two proportions because we want to compare two proportions.
+
+$p_{L}$ is the population proportions of US people who only support government action of lower class group.
+
+$p_{U}$ is the population proportions of US people who only support government action of upper class group.
+
+###1) Confidence interval
+
+#### Check conditions
+i) Independence : Each group is simple random sample from less than 10% of the population obviously so the observations are independent, both within the samples and between the samples.
+
+ii) Skewness : The success-failure conditions hold for each sample.
+
+#### Perform inference
+
+
+Because all conditions are met, the normal model can be used for the point estimate of the difference in support.
+<br>
+
+<center>
+$\hat{p}_{L} - \hat{p}_{U} = \frac{549}{(549 + 900 + 199)} - \frac{53}{(53 + 351 + 112)} = 0.333 - 0.103 = 0.23$
+</center>
+<br>
+
+The standard error should be computed using the sample proportions:
+<br>
+
+<center>
+$SE \approx \sqrt{\frac{0.333 (1-0.333)}{1648} + \frac{0.103 (1-0.103)}{516}} = 0.018$
+</center>
+<br>
+
+For a 95% confidence interval, we use $z^{*} = 1.96$:
+<br>
+
+<center>
+$point\, estimate \pm z^{*}SE \rightarrow 0.23 \pm 1.96 \times 0.018 \rightarrow (0.195, 0.265)$
+</center>
+<br>
+
+We are 95% confident that the approval rating of US people in lower income class for only government's responsibilities for improving the living standards of the poor is 19.5 %p to 26.5 %p higher than that of those in upper income class.
+
+###2) Hypothesis test
+
+#### State Hypothesis
+<center>
+H~0~ : $p_{L} = p_{U}$
+
+H~A~ : $p_{L} \neq p_{U}$
+</center>
+<br>
+
+#### Check conditions
+i) Independence : same as confidence interval
+
+ii) Skewness : To check if success-faliure conditions are met, we should use the __pooled proportion__ in this case. It is our best estimate of the proportions $p_{L}$ and $p_{U}$ *if the null hypothesis is true that $p_{L} = p_{U}$*
+
+<center>
+$\hat{p} = \frac{549 + 53}{549+900+199+53+351+112} = 0.278$
+</center>
+<br>
+
+<center>
+$\hat{p}\times n_{L} = 0.278 \times 1648 = 458.144\quad(1-\hat{p})\times n_{L} = 0.722 \times 1648 = 1189.856$
+</center>
+<br>
+<center>
+$\hat{p}\times n_{U} = 0.278 \times 516 = 143.488\quad(1-\hat{p})\times n_{U} = 0.722 \times 516 = 372.552$
+</center>
+<br>
+
+The success-failure condition is satisfied since all values are at least 10, and we can safely apply the normal model.
+
+Next, the standard error is calculated using the pooled proportion, $\hat{p}$:
+
+<center>
+$SE = \sqrt{\frac{\hat{p} (1-\hat{p})}{n_{L}} + \frac{\hat{p} (1-\hat{p})}{n_{U}}} = \sqrt{\frac{0.278 (1-0.278)}{1648} + \frac{0.278 (1-0.278)}{516}} = 0.023$
+</center>
+<br>
+
+#### Perform inference
+
+We first compute a test statistics and draw a picture:
+
+
+<center>
+$point\, estimate = \hat{p}_{L} - \hat{p}_{U} = \frac{549}{(549 + 900 + 199)} - \frac{53}{(53 + 351 + 112)} = 0.333 - 0.103 = 0.23$
+</center>
+<br>
+<center>
+$Z = \frac{point\, estimate - null value}{SE} = \frac{0.23 - 0}{0.023} = 10$
+</center>
+<br>
+
+```{r}
+shadenorm(below = -10, above = 10)
+
+```
+
+*shadenorm function is the customized function made by [R-blogger user](https://www.r-bloggers.com/how-to-shade-under-a-normal-density-in-r/).
+
+Because shaded area is utmost tiny, we cannot see it.
+
+The lower tail area is :
+
+```{r}
+pnorm(q = -10, lower.tail = TRUE)
+```
+
+we double to get the p-value:
+```{r}
+pnorm(q = -10, lower.tail = TRUE) * 2
+```
+
+
+Because this p-value is almost zero and much less than significance level (0.05), we can reject the null hypothesis. That is, the data provide convincing evidence that there is significant differnce in the proportions of US people only supporting government action between lower income class and upper income class.
+Both confidence interval and hypothesis test make consitent conclusion that the proportions differ. We can identify the correctness of hypothesis testing by confidence interval because it does not contain zero.
+<br>
+<br>
+<br>
+
+The second subject is that __there is association between opinions on supporting government action to help people in poverty and income classes__. To identify this claim, we will hire chi-square test for two-way tables.
+
+#### State Hypothesis
+<center>
+H~0~ : Opinions on supporting government action to help poor people are equally distributed accross all income classes.
+
+H~A~ : Opinions on supporting government action to help poor people are not equally distributed accross all income classes.
+</center>
+<br>
+
+The goal is to check whether _oecdclass_ variable is independent of the _helppoor_ variable.
+
+We can again review the contingency table but added total row and columns at this time.
+
+```{r}
+addmargins(table(gss$helppoor, gss$oecdclass), FUN = list(Total = sum), quiet = TRUE)
+```
+
+Assuming that there was no difference between the three groups, we can compute expected counts for a two-way table using the row totals, column totals, and the table total.
+
+```{r}
+two_way_table <- table(gss$helppoor, gss$oecdclass)
+Xsq <- chisq.test(two_way_table)
+addmargins(Xsq$expected, FUN = list(Total = sum), quiet = TRUE)
+
+```
+
+#### Check conditions
+i) Independence : Each case that contributes a count to the table is independent of all the other cases in the table.
+
+ii) Sample size : Each particular cell counts have at least 5 expected cases.
+
+#### Perform inference
+
+Using this expected counts table, we can calculate chi-square test statistic $\chi^2$:
+
+
+<center>
+$\chi^2 = \frac{472 - 312.2779}{312.2779} + ... + \frac{186 - 136.2768}{136.2768} = 196.88$
+</center>
+<br>
+
+For two way tables, the degrees of freedom is equal to:
+
+<center>
+$df = (3 - 1) \times (3 - 1) = 4$
+</center>
+<br>
+
+```{r}
+curve(dchisq(x,4),col="red", to = 200, xlab = "x^2", ylab = "Density")
+legend(150,0.1,c("df=4"),col=c("red"), lty=1)
+```
+
+As we see the chi square distribution plot of df = 4, the shaded area above 196.88 is almost zero.
+```{r}
+pchisq(q = 196.88, df = 4, lower.tail = FALSE)
+```
+
+And calculated p-value is also almost zero and much less than significance level $\alpha$ = 0.05. Therefore, the null hypothesis is rejected. That is, the data provide convincing evidence that there is association between opinions on supporting government action to help poor people and the income class. Chi-square test for two-way tables does not create confidence interval.
+
+## Summary
+
+We've got through some steps composed of examining the properties of collected data, EDA and inferences to research into our research interest. And this anlaysis lead us to two conclusions. First, there is a significant difference in the proportions of US people only supporting government action between lower class and upper class. In other words, there is convincing evidence that the proportion of US people in low income class who think government should do action and have responsibilites to improve the living standard of poor people rather than they help themselves is more than that of those in upper income class.
+Secondly, there is a association between income level of US people and their opinions on appropriateness of government's action to help US people in poverty.
+Although these conclusions may be reasonable because almost all people wants to get help from others rather than give helps, our analysis made it assured by statistical evidence. 
