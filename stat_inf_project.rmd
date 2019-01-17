@@ -165,9 +165,23 @@ Majority of respondents agree with both government action and self-reliance.
 Before conducting inference, we can draw contingency table using column "oecdclass" and "helppoor".
 
 ```{r}
-table(gss$helppoor, gss$oecdclass)
+tbl <- table(gss$helppoor, gss$oecdclass)
+tbl
 ```
 
+```{r}
+
+tbl_df <- as.data.frame(tbl) 
+colnames(tbl_df) <- c("helppoor", "oecdclass", "count")
+tbl_df$helppoor <- as.factor(tbl_df$helppoor)
+
+ggplot(tbl_df, aes(x = oecdclass, y = count, fill = forcats::fct_rev(helppoor))) + 
+   geom_bar(stat = 'identity')
+
+
+```
+
+As we can see at stacked bar plot, as income class gets higher, Supporting only government action ratio increase. But we should do inference for statistical ground for our conclusion.
 
 * * *
 
